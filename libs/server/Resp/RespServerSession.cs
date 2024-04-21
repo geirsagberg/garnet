@@ -258,6 +258,11 @@ namespace Garnet.server
 
             dcurr = networkSender.GetResponseObjectHead();
             dend = networkSender.GetResponseObjectTail();
+            
+            if (RespondToHttpGet())
+            {
+                return;
+            }
 
             var _origReadHead = readHead;
 
@@ -324,6 +329,34 @@ namespace Garnet.server
                     networkSender.DisposeNetworkSender(true);
                 }
             }
+        }
+
+        private bool RespondToHttpGet()
+        {
+            if (*(ulong*)recvBufferPtr != MemoryMarshal.Read<ulong>("GET / HT"u8))
+            {
+                return false;
+            }
+
+            logger?.LogTrace("HTTP request detected");
+            const string response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+            var responseBytes = Encoding.ASCII.GetBytes(response);
+            // Ensure there is enough space in the buffer for the response
+            if (dend - dcurr >= responseBytes.Length)
+            {
+                // Copy the response bytes to the buffer
+                responseBytes.AsSpan().CopyTo(new Span<byte>(dcurr, responseBytes.Length));
+                dcurr += responseBytes.Length;
+            }
+            else
+            {
+                // If there is not enough space, send the current buffer and reset it
+                SendAndReset();
+            }
+            Send(networkSender.GetResponseObjectHead());
+            networkSender.DisposeNetworkSender(true);
+            return true;
+
         }
 
         // Make first command in string as uppercase
